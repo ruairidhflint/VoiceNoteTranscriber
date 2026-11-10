@@ -34,4 +34,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    #if DEBUG
+    /// Debug builds only: `--render-snapshots <dir>` renders README screenshots with sample data, then quits.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let args = CommandLine.arguments
+        guard let flag = args.firstIndex(of: "--render-snapshots"), args.indices.contains(flag + 1) else { return }
+        SnapshotRenderer.run(outputDirectory: args[flag + 1])
+    }
+    #endif
 }

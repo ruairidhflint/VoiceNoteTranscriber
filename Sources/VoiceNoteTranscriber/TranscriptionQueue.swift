@@ -102,6 +102,9 @@ final class TranscriptionQueue {
     @ObservationIgnored private var pendingReload: Task<Void, Never>?
 
     init() {
+        #if DEBUG
+        if SnapshotRenderer.isActive { return } // sample data only: don't touch the Keychain
+        #endif
         apiKey = Keychain.read()
         hasAPIKey = apiKey != nil
     }
@@ -136,6 +139,9 @@ final class TranscriptionQueue {
     /// Re-reads the output folder and (re)attaches the Finder watcher. Cheap; called on launch, on activation,
     /// when the folder setting changes, and whenever the folder's contents change.
     func refreshLibrary() async {
+        #if DEBUG
+        if SnapshotRenderer.isActive { return } // keep the sample notes, don't read your folder
+        #endif
         let folder = Prefs.outputFolder
         if watcher.folder?.path != folder.path || !watcher.isWatching {
             watcher.watch(folder) { [weak self] in self?.scheduleRefresh() }
