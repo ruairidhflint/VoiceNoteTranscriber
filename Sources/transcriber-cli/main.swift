@@ -4,9 +4,10 @@ import TranscriberCore
 // Command-line twin of the app, for trying the pipeline on real files.
 //   transcriber-cli chunks <audio>       decode + show where the recording would be split (no network)
 //   transcriber-cli transcribe <audio> [--model gpt-audio-1.5|gpt-transcribe] [--out <folder>] [--txt]
+//   transcriber-cli list <folder>        what the app's sidebar would list for that folder
 
 let args = Array(CommandLine.arguments.dropFirst())
-let usage = "usage: transcriber-cli chunks <audio> | transcribe <audio> [--model gpt-audio-1.5|gpt-transcribe] [--out <folder>] [--txt]"
+let usage = "usage: transcriber-cli list <folder> | chunks <audio> | transcribe <audio> [--model gpt-audio-1.5|gpt-transcribe] [--out <folder>] [--txt]"
 guard args.count >= 2 else {
     print(usage)
     exit(2)
@@ -48,6 +49,12 @@ case "transcribe":
     print(String(format: "done in %.0fs: %d words, %d [inaudible]", Date().timeIntervalSince(started),
                  result.transcript.split(whereSeparator: \.isWhitespace).count, inaudible))
     print(result.outputURL.path)
+
+case "list":
+    // `file` is the folder here: show what the app's library would list.
+    for note in NoteLibrary.load(from: file) {
+        print("\(note.recordedAt.formatted(date: .abbreviated, time: .shortened)) · \(note.duration ?? "?") · \(note.model ?? "?") · \(note.title)  [\(note.transcript.split(whereSeparator: \.isWhitespace).count) words]")
+    }
 
 default:
     print(usage)
