@@ -1,16 +1,20 @@
 import Foundation
 
 public enum TranscriptionModel: String, CaseIterable, Identifiable, Sendable {
-    /// General audio model: hears the audio and follows the prompt, including the never-guess rule.
-    case gptAudio = "gpt-audio-1.5"
-    /// Dedicated speech-to-text: most accurate, but takes no instructions, so it won't mark [inaudible].
+    /// Dedicated speech-to-text. Takes no instructions, but reports how sure it is of each word,
+    /// so the app marks the doubtful ones [inaudible] itself.
     case gptTranscribe = "gpt-transcribe"
+    /// General audio model that follows the prompt. In testing it often returned broken or incomplete transcripts:
+    /// wrapped in JSON, padded with stray tokens, empty, or missing most of the audio.
+    case gptAudio = "gpt-audio-1.5"
+
+    public static let recommended: TranscriptionModel = .gptTranscribe
 
     public var id: String { rawValue }
     public var summary: String {
         switch self {
-        case .gptAudio: "Follows the prompt below, including the never-guess [inaudible] rule."
-        case .gptTranscribe: "OpenAI's dedicated transcriber. Very accurate, but it ignores instructions, so it won't mark [inaudible] and the prompt below isn't used."
+        case .gptTranscribe: "OpenAI's dedicated transcriber: accurate and complete. Words it isn't sure of become [inaudible], as set below."
+        case .gptAudio: "Follows the prompt below, but in testing it often sent back broken or incomplete transcripts. Not recommended."
         }
     }
 }
@@ -19,6 +23,7 @@ public enum OpenAIError: LocalizedError, Equatable {
     case badKey
     case http(Int, String)
     case refused(String)
+    case noConfidence
     case unexpectedResponse
 
     public var errorDescription: String? {
@@ -26,6 +31,7 @@ public enum OpenAIError: LocalizedError, Equatable {
         case .badKey: "OpenAI rejected the API key. Check it in Settings."
         case .http(let status, let message): "OpenAI error \(status): \(message)"
         case .refused(let reason): "The model declined: \(reason)"
+        case .noConfidence: "OpenAI didn't say how sure it was of each word, so unclear words can't be marked [inaudible]. To transcribe without marking them, set Mark as [inaudible] to Off in Settings."
         case .unexpectedResponse: "OpenAI sent a response the app didn't understand."
         }
     }
@@ -46,10 +52,12 @@ public struct OpenAIClient: Sendable {
 
     // MARK: Transcription
 
-    public func transcribe(wav: Data, model: TranscriptionModel, prompt: String, part: Int, of total: Int) async throws -> String {
+    public func transcribe(
+        wav: Data, model: TranscriptionModel, prompt: String, strictness: InaudibleStrictness, part: Int, of total: Int
+    ) async throws -> String {
         switch model {
         case .gptAudio: try await transcribeWithChat(wav: wav, model: model.rawValue, prompt: prompt, part: part, of: total)
-        case .gptTranscribe: try await transcribeWithSpeechToText(wav: wav, model: model.rawValue)
+        case .gptTranscribe: try await transcribeWithSpeechToText(wav: wav, model: model.rawValue, strictness: strictness)
         }
     }
 
@@ -81,7 +89,7 @@ public struct OpenAIClient: Sendable {
         }
     }
 
-    private func transcribeWithSpeechToText(wav: Data, model: String) async throws -> String {
+    private func transcribeWithSpeechToText(wav: Data, model: String, strictness: InaudibleStrictness) async throws -> String {
         let boundary = "Boundary-\(UUID().uuidString)"
         var body = Data()
         func field(_ name: String, _ value: String) {
@@ -89,6 +97,7 @@ public struct OpenAIClient: Sendable {
         }
         field("model", model)
         field("response_format", "json")
+        if strictness != .off { field("include[]", "logprobs") }
         field("prompt", "A personal voice note dictated in British English.")
         body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav\r\n\r\n".utf8))
         body.append(wav)
@@ -98,8 +107,29 @@ public struct OpenAIClient: Sendable {
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
-        guard let text = try await send(request)["text"] as? String else { throw OpenAIError.unexpectedResponse }
-        return text
+        let json = try await send(request)
+        guard let text = json["text"] as? String else { throw OpenAIError.unexpectedResponse }
+        guard strictness != .off else { return InaudibleMarker.normalise(text) }
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return text }
+        guard let tokens = Self.tokenLogprobs(json["logprobs"]) else { throw OpenAIError.noConfidence }
+        return InaudibleMarker.mark(text, tokens: tokens, threshold: strictness.threshold)
+    }
+
+    /// `[{"token": " word", "logprob": -0.1, "bytes": [32, 119, …]}, …]`; nil if missing or malformed.
+    static func tokenLogprobs(_ value: Any?) -> [TokenLogprob]? {
+        guard let items = value as? [[String: Any]], !items.isEmpty else { return nil }
+        var tokens: [TokenLogprob] = []
+        for item in items {
+            guard let logprob = (item["logprob"] as? NSNumber)?.doubleValue else { return nil }
+            if let bytes = item["bytes"] as? [NSNumber] {
+                tokens.append(TokenLogprob(bytes: bytes.map(\.uint8Value), logprob: logprob))
+            } else if let token = item["token"] as? String {
+                tokens.append(TokenLogprob(bytes: Array(token.utf8), logprob: logprob))
+            } else {
+                return nil
+            }
+        }
+        return tokens
     }
 
     // MARK: Title

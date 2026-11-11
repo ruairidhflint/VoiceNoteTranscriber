@@ -3,11 +3,12 @@ import TranscriberCore
 
 // Command-line twin of the app, for trying the pipeline on real files.
 //   transcriber-cli chunks <audio>       decode + show where the recording would be split (no network)
-//   transcriber-cli transcribe <audio> [--model gpt-audio-1.5|gpt-transcribe] [--out <folder>] [--txt]
+//   transcriber-cli transcribe <audio> [--model gpt-transcribe|gpt-audio-1.5] [--strictness off|light|balanced|strict]
+//                                      [--out <folder>] [--txt]
 //   transcriber-cli list <folder>        what the app's sidebar would list for that folder
 
 let args = Array(CommandLine.arguments.dropFirst())
-let usage = "usage: transcriber-cli list <folder> | chunks <audio> | transcribe <audio> [--model gpt-audio-1.5|gpt-transcribe] [--out <folder>] [--txt]"
+let usage = "usage: transcriber-cli list <folder> | chunks <audio> | transcribe <audio> [--model gpt-transcribe|gpt-audio-1.5] [--strictness off|light|balanced|strict] [--out <folder>] [--txt]"
 guard args.count >= 2 else {
     print(usage)
     exit(2)
@@ -34,12 +35,14 @@ case "transcribe":
     }
     let modelIndex = args.firstIndex(of: "--model").map { $0 + 1 }
     let outIndex = args.firstIndex(of: "--out").map { $0 + 1 }
-    let model = modelIndex.flatMap { args.indices.contains($0) ? TranscriptionModel(rawValue: args[$0]) : nil } ?? .gptAudio
+    let strictnessIndex = args.firstIndex(of: "--strictness").map { $0 + 1 }
+    let model = modelIndex.flatMap { args.indices.contains($0) ? TranscriptionModel(rawValue: args[$0]) : nil } ?? .recommended
+    let strictness = strictnessIndex.flatMap { args.indices.contains($0) ? InaudibleStrictness(rawValue: args[$0]) : nil } ?? .balanced
     let out = outIndex.flatMap { args.indices.contains($0) ? URL(fileURLWithPath: args[$0], isDirectory: true) : nil }
         ?? FileManager.default.temporaryDirectory.appending(path: "voice-notes")
     let settings = PipelineSettings(
         apiKey: key, model: model, prompt: DefaultPrompt.text, outputFolder: out,
-        format: args.contains("--txt") ? .plainText : .markdown)
+        format: args.contains("--txt") ? .plainText : .markdown, strictness: strictness)
     let started = Date()
     let result = try await TranscriptionPipeline.run(source: file, settings: settings) { stage in
         print("  \(stage)")

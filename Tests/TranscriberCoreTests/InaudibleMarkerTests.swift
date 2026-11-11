@@ -64,4 +64,14 @@ struct InaudibleMarkerTests {
     @Test func accentedLettersCountAsPartOfTheWord() {
         #expect(mark([("A", 0.99), (" café", 0.1), (" nearby", 0.99)]) == "A [inaudible] nearby")
     }
+
+    @Test func readsTokensFromTheAPIResponse() throws {
+        let json = #"[{"token": "Hi", "logprob": -0.01, "bytes": [72, 105]}, {"token": " there", "logprob": -2.5, "bytes": [32, 116, 104, 101, 114, 101]}]"#
+        let value = try JSONSerialization.jsonObject(with: Data(json.utf8))
+        let tokens = try #require(OpenAIClient.tokenLogprobs(value))
+        #expect(tokens.map(\.bytes) == [Array("Hi".utf8), Array(" there".utf8)])
+        #expect(tokens.map(\.logprob) == [-0.01, -2.5])
+        #expect(OpenAIClient.tokenLogprobs(nil) == nil)
+        #expect(OpenAIClient.tokenLogprobs([[String: Any]]()) == nil)
+    }
 }
