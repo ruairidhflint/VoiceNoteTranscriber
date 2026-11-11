@@ -9,7 +9,8 @@ Voice Note Transcriber.app (SwiftUI)               TranscriberCore (no UI, unit-
 ├─ Drop target: window, Dock icon, Open With       ├─ AudioLoader    any audio → 16 kHz mono PCM
 ├─ TranscriptionQueue: one file at a time ──────▶  ├─ Chunker        split at pauses, ~4-minute parts
 ├─ Sidebar = the notes folder (FolderWatcher)      ├─ WAV            each part → WAV for upload
-└─ Settings: key, model, folder, format, prompt    ├─ OpenAIClient   transcribe each part, write a title
+└─ Settings: key, model, strictness, folder,       ├─ OpenAIClient   transcribe each part, write a title
+   format, prompt                                  ├─ InaudibleMarker doubtful words → [inaudible]
                                                    ├─ Stitcher       join the parts
 transcriber-cli (the same pipeline, in Terminal)   ├─ NoteWriter     details header, file name, rename
                                                    ├─ NoteLibrary    read notes back from the folder
@@ -37,16 +38,32 @@ There are no third-party dependencies: AVFoundation decodes audio, URLSession ta
 
    On a real 24m 49s walking note this gave seven parts, every cut in silence.
 3. **Transcribe.** Each part is encoded as WAV and sent on its own:
-   - `gpt-audio-1.5` (default) gets the part as `input_audio` in a Chat Completions request, with your prompt as the system message and `modalities: ["text"]`.
-   - `gpt-transcribe` uses `/v1/audio/transcriptions`. It's OpenAI's dedicated transcriber: more literal, but it can't follow a prompt, so it won't mark `[inaudible]`.
+   - `gpt-transcribe` (default) uses `/v1/audio/transcriptions` with `include[]=logprobs`, then `InaudibleMarker` replaces the words it wasn't sure of (see below).
+   - `gpt-audio-1.5` gets the part as `input_audio` in a Chat Completions request, with your prompt as the system message and `modalities: ["text"]`.
    - Requests are retried up to three times on rate limits (not on an exhausted quota), server errors and dropped connections, honouring `Retry-After`.
 4. **Join.** `Stitcher` drops parts that came back as `[no speech]` and joins the rest: with a paragraph break if the previous part ended a sentence, or a space if it stopped mid-sentence.
 5. **Title.** `gpt-5-mini` writes a short title from the transcript. If that fails, the audio file's name is used and the note shows a warning.
 6. **Save.** The note is written as `yyyy-MM-dd HH.mm – Title.md` (or `.txt`), with ` (2)` added if the name is taken.
 
+## Marking [inaudible]
+
+`gpt-transcribe` takes no instructions, so it can't be told not to guess. Instead it's asked for the log probability of every token it writes, and the app does the marking:
+
+- A word is a whitespace-separated run of text. Its confidence is the **product** of the probabilities of the tokens that spell its letters and digits, so a made-up word built from several half-sure tokens ("Wondermushly": 0.6 × 0.6 × 0.6…) scores low even when no single token does. Punctuation tokens don't count: being unsure whether to end a sentence isn't being unsure what was said.
+- A word below the threshold for **Mark as [inaudible]** in Settings (Light 30%, Balanced 50%, Strict 70%) becomes `[inaudible]`, keeping its punctuation. Neighbouring doubtful words in the same phrase become one `[inaudible]`, but not across a full stop, comma or line break.
+- The text OpenAI returns has spaces between sentences that the tokens don't, so text and tokens are lined up ignoring whitespace. If they differ in anything else, the tokens' own text is used, because that's what the probabilities describe.
+- Markers the model writes itself, like `[unclear]` or `(inaudible)`, become `[inaudible]`.
+- If the response has no probabilities, the part fails with an error saying so, rather than silently passing on unmarked guesses. **Off** skips all of this.
+
+On a real 22-minute walking note, Balanced marked 47 stretches in 3,356 words.
+
+### Why not gpt-audio-1.5
+
+It was the original default, because it follows a prompt that says "never guess". In testing on that same note it was unreliable: across ten requests, replies came back wrapped in JSON (`{"text": "…"}`), started with stray internal tokens (`<|aesthetics_7|>`), were empty, or covered 141 words of a part that held about 700. Its wording of hard passages also changed from run to run, so it was guessing despite the prompt. It's still selectable for comparison.
+
 ## The prompt
 
-The default prompt (`DefaultPrompt.swift`, editable in Settings) asks for **clean verbatim**:
+Only `gpt-audio-1.5` uses the prompt. The default (`DefaultPrompt.swift`, editable in Settings when that model is selected) asks for **clean verbatim**:
 
 - The speaker's exact words in their order, never paraphrased or corrected.
 - No ums, stutters, repeated words or abandoned false starts.
@@ -66,7 +83,7 @@ Each note starts with a details header. Markdown notes use front matter, which O
 recorded: 2026-11-10 14:32
 duration: 24m 49s
 source: "New Recording 23.m4a"
-model: gpt-audio-1.5
+model: gpt-transcribe
 ---
 
 So the opening should start with her already on the stairs…
@@ -97,10 +114,10 @@ The app is ad-hoc signed when you build it. A locally signed app gets a new sign
 ## Development
 
 ```sh
-swift test                                                       # 15 unit tests
+swift test                                                       # 27 unit tests
 ./install.sh --build-only                                        # test + build ./build/Voice Note Transcriber.app
 swift run -c release transcriber-cli chunks ~/Downloads/note.m4a # where a recording would be split (offline)
-swift run -c release transcriber-cli transcribe ~/Downloads/note.m4a --model gpt-transcribe --out /tmp/notes
+swift run -c release transcriber-cli transcribe ~/Downloads/note.m4a --strictness strict --out /tmp/notes
 swift run -c release transcriber-cli list ~/Documents/Voice\ Notes   # what the sidebar would list
 ./scripts/render-screenshots.sh                                  # re-render docs/images (sample data only)
 ```
