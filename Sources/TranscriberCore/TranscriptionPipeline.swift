@@ -6,13 +6,19 @@ public struct PipelineSettings: Sendable {
     public var prompt: String
     public var outputFolder: URL
     public var format: OutputFormat
+    /// For gpt-transcribe: how unsure it must be of a word before the word becomes [inaudible].
+    public var strictness: InaudibleStrictness
 
-    public init(apiKey: String, model: TranscriptionModel, prompt: String, outputFolder: URL, format: OutputFormat) {
+    public init(
+        apiKey: String, model: TranscriptionModel, prompt: String, outputFolder: URL, format: OutputFormat,
+        strictness: InaudibleStrictness = .balanced
+    ) {
         self.apiKey = apiKey
         self.model = model
         self.prompt = prompt
         self.outputFolder = outputFolder
         self.format = format
+        self.strictness = strictness
     }
 }
 
@@ -52,7 +58,8 @@ public enum TranscriptionPipeline {
             await progress(.transcribing(part: index + 1, of: ranges.count))
             let wav = WAV.encode(audio.samples[range], sampleRate: audio.sampleRate)
             parts.append(try await client.transcribe(
-                wav: wav, model: settings.model, prompt: settings.prompt, part: index + 1, of: ranges.count))
+                wav: wav, model: settings.model, prompt: settings.prompt, strictness: settings.strictness,
+                part: index + 1, of: ranges.count))
         }
         let transcript = Stitcher.join(parts)
 

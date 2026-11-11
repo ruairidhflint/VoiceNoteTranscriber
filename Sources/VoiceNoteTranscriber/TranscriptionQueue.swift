@@ -9,6 +9,7 @@ enum Prefs {
     static let formatKey = "format"
     static let folderKey = "outputFolder"
     static let promptKey = "prompt"
+    static let strictnessKey = "inaudibleStrictness"
     static let defaultFolder = FileManager.default.homeDirectoryForCurrentUser
         .appending(path: "Documents/Voice Notes", directoryHint: .isDirectory)
 
@@ -21,10 +22,11 @@ enum Prefs {
         let prompt = defaults.string(forKey: promptKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
         return PipelineSettings(
             apiKey: apiKey,
-            model: defaults.string(forKey: modelKey).flatMap(TranscriptionModel.init(rawValue:)) ?? .gptAudio,
+            model: defaults.string(forKey: modelKey).flatMap(TranscriptionModel.init(rawValue:)) ?? .recommended,
             prompt: (prompt?.isEmpty == false ? prompt : nil) ?? DefaultPrompt.text,
             outputFolder: outputFolder,
-            format: defaults.string(forKey: formatKey).flatMap(OutputFormat.init(rawValue:)) ?? .markdown)
+            format: defaults.string(forKey: formatKey).flatMap(OutputFormat.init(rawValue:)) ?? .markdown,
+            strictness: defaults.string(forKey: strictnessKey).flatMap(InaudibleStrictness.init(rawValue:)) ?? .balanced)
     }
 }
 

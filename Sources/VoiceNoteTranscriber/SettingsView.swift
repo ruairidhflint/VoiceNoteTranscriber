@@ -4,7 +4,8 @@ import TranscriberCore
 
 struct SettingsView: View {
     @Environment(TranscriptionQueue.self) private var queue
-    @AppStorage(Prefs.modelKey) private var model = TranscriptionModel.gptAudio.rawValue
+    @AppStorage(Prefs.modelKey) private var model = TranscriptionModel.recommended.rawValue
+    @AppStorage(Prefs.strictnessKey) private var strictness = InaudibleStrictness.balanced.rawValue
     @AppStorage(Prefs.formatKey) private var format = OutputFormat.markdown.rawValue
     @AppStorage(Prefs.folderKey) private var folder = Prefs.defaultFolder.path
     @AppStorage(Prefs.promptKey) private var prompt = DefaultPrompt.text
@@ -35,6 +36,14 @@ struct SettingsView: View {
                 Text(TranscriptionModel(rawValue: model)?.summary ?? "")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if !usesPrompt {
+                    Picker("Mark as [inaudible]", selection: $strictness) {
+                        ForEach(InaudibleStrictness.allCases) { Text($0.label).tag($0.rawValue) }
+                    }
+                    Text(InaudibleStrictness(rawValue: strictness)?.summary ?? "")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Output") {
@@ -51,22 +60,29 @@ struct SettingsView: View {
                 }
             }
 
-            Section {
-                TextEditor(text: $prompt)
-                    .font(.system(.callout, design: .monospaced))
-                    .frame(minHeight: 230)
-                Button("Reset to Default") { prompt = DefaultPrompt.text }
-                    .disabled(prompt == DefaultPrompt.text)
-            } header: {
-                Text("Transcription prompt")
-            } footer: {
-                Text("Sent with every recording to gpt-audio-1.5. Keep the [inaudible] rule. The app relies on it, and on [no speech] for silent stretches.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            if usesPrompt { promptSection }
         }
         .formStyle(.grouped)
-        .frame(width: 580, height: 740)
+        .frame(width: 580, height: usesPrompt ? 740 : 448)
+    }
+
+    /// Only gpt-audio-1.5 takes a prompt; gpt-transcribe ignores instructions.
+    private var usesPrompt: Bool { TranscriptionModel(rawValue: model) == .gptAudio }
+
+    private var promptSection: some View {
+        Section {
+            TextEditor(text: $prompt)
+                .font(.system(.callout, design: .monospaced))
+                .frame(minHeight: 230)
+            Button("Reset to Default") { prompt = DefaultPrompt.text }
+                .disabled(prompt == DefaultPrompt.text)
+        } header: {
+            Text("Transcription prompt")
+        } footer: {
+            Text("Sent with every recording to gpt-audio-1.5. Keep the [inaudible] rule. The app relies on it, and on [no speech] for silent stretches.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func saveKey() {

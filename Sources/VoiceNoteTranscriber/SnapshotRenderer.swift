@@ -25,7 +25,7 @@ enum SnapshotRenderer {
                              out.appending(path: "note-\(name).png"))
                 await render(EmptyDropView(chooseFiles: {}).environment(queue), appearance, NSSize(width: 640, height: 420),
                              out.appending(path: "drop-\(name).png"))
-                await render(SettingsView().environment(queue), appearance, NSSize(width: 580, height: 740),
+                await render(SettingsView().environment(queue), appearance, NSSize(width: 580, height: 448),
                              out.appending(path: "settings-\(name).png"))
             }
             try? FileManager.default.removeItem(at: samples)
@@ -43,9 +43,7 @@ enum SnapshotRenderer {
 
             Then the keeper's log. I keep coming back to the idea that the log is written in two hands, and the second hand starts on the night of the storm.
 
-            Other speaker: Sorry, is this the way to the harbour?
-
-            Yes, straight down. Anyway, the second hand is neater than the first, which is the [inaudible] detail I want to hold back until chapter three.
+            Anyway, the second hand is neater than the first, which is the [inaudible] detail I want to hold back until chapter three.
             """, 1489, 0),
             ("Ending should mirror the first chapter", "Sample text.", 312, 25.5),
             ("Names for the keeper", "Sample text.", 95, 76.5),
@@ -54,7 +52,7 @@ enum SnapshotRenderer {
         ]
         for sample in samples {
             let metadata = NoteMetadata(recordedAt: now.addingTimeInterval(-sample.hoursAgo * 3_600),
-                                        duration: sample.duration, sourceFileName: "New Recording.m4a", model: "gpt-audio-1.5")
+                                        duration: sample.duration, sourceFileName: "New Recording.m4a", model: "gpt-transcribe")
             _ = try? NoteWriter.write(transcript: sample.text, title: sample.title, metadata: metadata, format: .markdown, to: folder)
         }
         queue.notes = NoteLibrary.load(from: folder)

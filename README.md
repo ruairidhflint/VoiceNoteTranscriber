@@ -28,8 +28,8 @@
 ## Features
 
 - **Any audio, no converting.** m4a straight from Voice Memos, plus mp3, wav, aiff, caf, aac and the sound from mp4 or mov video.
-- **Never guesses.** Words it can't make out become `[inaudible]`, highlighted so you know where to re-listen.
-- **Clean verbatim.** Your words in your order, without the ums, stutters and false starts. Punctuated, in paragraphs, in British spelling. The prompt is yours to edit.
+- **Never guesses.** Any word OpenAI wasn't sure it heard becomes `[inaudible]`, highlighted so you know where to re-listen. You choose how strict that is.
+- **Clean and complete.** Your words in your order, without the ums and ers. Punctuated, in British spelling.
 - **Long notes are fine.** Recordings are split at natural pauses, transcribed part by part and joined back together, so nothing is cut mid-sentence.
 - **Named for you.** Each note gets a short AI title and its recording date: `2026-11-10 14.32 – Opening scene for the lighthouse chapter.md`. Edit the title to rename the file.
 - **Your folder is the library.** Notes are plain Markdown or text files in a folder you choose. Rename or delete them in Finder and the app keeps up.
@@ -49,7 +49,7 @@ The script checks your setup, runs the tests, builds the app, installs it in `/A
 
 Then add your key:
 
-<img align="right" src="docs/images/settings-light.png" width="300" alt="Settings, with the OpenAI API key, model, notes folder, format and transcription prompt">
+<img align="right" src="docs/images/settings-light.png" width="300" alt="Settings, with the OpenAI API key, model, how strictly to mark [inaudible], notes folder and format">
 
 1. Open **Settings** (⌘,).
 2. Paste your OpenAI API key and click **Save Key**.
@@ -97,7 +97,7 @@ A short details header, then the transcript:
 recorded: 2026-11-10 14:32
 duration: 24m 49s
 source: "New Recording 23.m4a"
-model: gpt-audio-1.5
+model: gpt-transcribe
 ---
 
 So the opening should start with her already on the stairs, not arriving. The reader comes in mid-climb, and the first thing she notices is that the lamp is [inaudible], which tells you something has gone wrong before anyone says a word.
@@ -109,8 +109,9 @@ Plain-text notes have the same details as `Recorded:`, `Duration:`, `Source:` an
 <details>
 <summary><b>Which model should I use?</b></summary>
 
-- **`gpt-audio-1.5`** (the default) follows the prompt, so it writes clean verbatim and marks `[inaudible]` instead of guessing.
-- **`gpt-transcribe`** is OpenAI's dedicated speech-to-text model. It's more literal word for word, but it can't follow instructions, so it won't mark `[inaudible]`.
+- **`gpt-transcribe`** (the default) is OpenAI's dedicated speech-to-text model. It doesn't take instructions, but it reports how sure it is of every word, and the app turns the doubtful ones into `[inaudible]`.
+  **Mark as [inaudible]** in Settings sets the bar: **Light** (words it was under 30% sure of), **Balanced** (under 50%, the default), **Strict** (under 70%) or **Off**.
+- **`gpt-audio-1.5`** follows an editable prompt, including the never-guess rule. In testing it was unreliable: it often wrapped the transcript in JSON, padded it with stray tokens, sent back nothing at all, or skipped most of a part. It's there for comparison, not recommended.
 
 Each note records which model wrote it. Switch in **Settings**.
 </details>
@@ -151,16 +152,16 @@ Choose **Always Allow**. A self-built app gets a new signature each time it's re
 ## How it works
 
 Audio is converted on your Mac to 16 kHz mono. Long recordings are split at natural pauses into parts of about four minutes.
-Each part goes to OpenAI with the transcription prompt, and the parts are joined back together, given a title and saved with a details header.
+Each part goes to OpenAI's speech-to-text model, words it wasn't sure of become `[inaudible]`, and the parts are joined back together, given a title and saved with a details header.
 It's written in Swift with no third-party dependencies.
 
-Read [**docs/DESIGN.md**](docs/DESIGN.md) for the architecture, how the pause detection works, the prompt and the tests.
+Read [**docs/DESIGN.md**](docs/DESIGN.md) for the architecture, how the pause detection and the `[inaudible]` marking work, and the tests.
 
 ## Development
 
 ```sh
 ./install.sh --build-only                                        # test + build ./build/Voice Note Transcriber.app
-swift test                                                       # 15 unit tests
+swift test                                                       # 27 unit tests
 swift run -c release transcriber-cli chunks ~/Downloads/note.m4a # where a recording would be split (offline)
 ./scripts/render-screenshots.sh                                  # re-render the images in docs/images
 ```
